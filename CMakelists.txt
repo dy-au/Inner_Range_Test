@@ -1,0 +1,96 @@
+# Because we are cross compiling for embedded
+cmake_minimum_required (VERSION 3.22.0)
+project (IR_code_test)
+enable_language(C ASM)
+
+set(CMAKE_SYSTEM_NAME       Generic)
+set(CMAKE_SYSTEM_PROCESSOR  arm)
+#set(CMAKE_CROSSCOMPILING 1)
+set(CMAKE_C_COMPILER_FORCED TRUE)
+#set(CMAKE_CXX_COMPILER_FORCED TRUE)
+set(CMAKE_C_COMPILER_ID GNU)
+set(CMAKE_CXX_COMPILER_ID GNU)
+
+# Some default GCC settings
+# arm-none-eabi- must be part of path environment
+set(TOOLCHAIN_PREFIX                arm-none-eabi-)
+
+set(CMAKE_C_COMPILER                ${TOOLCHAIN_PREFIX}gcc)
+set(CMAKE_ASM_COMPILER              ${TOOLCHAIN_PREFIX}as)
+set(CMAKE_CXX_COMPILER              ${TOOLCHAIN_PREFIX}g++)
+set(CMAKE_LINKER                    ${TOOLCHAIN_PREFIX}ld)
+set(CMAKE_OBJCOPY                   ${TOOLCHAIN_PREFIX}objcopy)
+set(CMAKE_SIZE                      ${TOOLCHAIN_PREFIX}size)
+
+set(CMAKE_EXECUTABLE_SUFFIX_ASM     ".elf")
+set(CMAKE_EXECUTABLE_SUFFIX_C       ".elf")
+
+set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+# MCU specific flags
+set(TARGET_FLAGS "-mcpu=cortex-m4 -mfpu=fpv4-sp-d16 -mfloat-abi=hard ")
+
+# Make sure CMAKE_C_FLAGS is wiped first
+#  NOTE: We have FULL flag coverage for all toolchains
+set(CMAKE_C_FLAGS "${TARGET_FLAGS}")
+# OFF for compliance (i.e. simplicity of use case)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-asm -fno-builtin -fno-cond-mismatch -fno-gnu-tm -fno-lax-vector-conversions -fno-ms-extensions -foffload=disable -fno-openacc -fno-openmp -fno-plan9-extensions")
+# ON
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -ffreestanding -fsigned-bitfields -funsigned-bitfields -fsigned-char -funsigned-char -fstrict-flex-arrays=3 -mgeneral-regs-only")
+# WARNING configuration (i.e. very strict) - FIXME turn warnings to errors once things are a bit more mature
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -Wpedantic -fdata-sections -ffunction-sections")
+
+# FIXME optimisation options
+if(CMAKE_BUILD_TYPE MATCHES Debug)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -g3 -D_DEBUG")
+endif()
+if(CMAKE_BUILD_TYPE MATCHES Release)
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Os -g0")
+    set(CMAKE_ASM_FLAGS_RELEASE "")
+endif()
+
+#string(REPLACE "-O3" "" CMAKE_ASM_FLAGS ${CMAKE_ASM_FLAGS})
+
+set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS}  -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
+#set(CMAKE_ASM_FLAGS "${CMAKE_C_FLAGS} -x assembler-with-cpp -MMD -MP")
+
+
+# FIXME C++ options
+set(CMAKE_CXX_FLAGS "${CMAKE_C_FLAGS} -fno-rtti -fno-exceptions -fno-threadsafe-statics")
+
+# Add some C_FLAGS after CXX_FLAGS as not supported by CXX
+# OFF for compliance (i.e. simplicity of use case)
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fno-gimple -fno-gnu89-inline")
+# ON
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=iso9899:2011  -fsso-struct=native")
+
+set(CMAKE_C_LINK_FLAGS "${TARGET_FLAGS}")
+#set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -T \"${STM32CUBE_CMSIS_PATH}/Core/STM32G474RETX_FLASH.ld\"")
+set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} --specs=nosys.specs")
+set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,-Map=build/${CMAKE_PROJECT_NAME}.map -Wl,--gc-sections")
+set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--start-group -lc -lm -Wl,--end-group")
+set(CMAKE_C_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--print-memory-usage")
+
+set(CMAKE_CXX_LINK_FLAGS "${CMAKE_C_LINK_FLAGS} -Wl,--start-group -lstdc++ -lsupc++ -Wl,--end-group")
+
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build)
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/build)
+
+file(GLOB SRC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c
+
+)
+file(GLOB INC_FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+add_executable (${PROJECT_NAME} ${SRC_FILES})
+
+target_include_directories(${PROJECT_NAME} PUBLIC ${INC_FILES})
+
+add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/Build/${PROJECT_NAME}.hex COMMENT "Generating HEX file from ELF"
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:${PROJECT_NAME}> ${CMAKE_CURRENT_BINARY_DIR}/Build/${PROJECT_NAME}.bin COMMENT "Generating Binary file from ELF"
+)
+
